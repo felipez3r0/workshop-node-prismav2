@@ -271,7 +271,7 @@ Agora, vamos adicionar os scripts no `package.json`. Adicione os seguintes scrip
 ```json
 "build": "tsc",
 "start": "npm run build && node dist/server.js",
-"dev": "tsx src/server.ts"
+"dev": "tsx watch src/server.ts"
 ```
 
 Para iniciar o servidor em modo de desenvolvimento:
@@ -284,4 +284,181 @@ Para compilar e executar em produção:
 
 ```bash
 npm start
+```
+
+### Etapa 6 - Update e Delete de Usuários
+
+Vamos adicionar as funcionalidades de update e delete de usuários. O primeiro passo é adicionar os métodos no repositório de Usuário. Atualize o arquivo `src/repositories/user.repository.ts` com os seguintes métodos:
+
+```typescript
+export async function update(id: number, data: { name?: string; email?: string }) {
+  return User.update({ where: { id }, data })
+}
+
+export async function remove(id: number) {
+  return User.delete({ where: { id } })
+}
+```
+
+Em seguida, atualize o serviço de Usuário. Atualize o arquivo `src/services/user.service.ts` com os seguintes métodos:
+
+```typescript
+export async function updateUser(id: number, data: { name?: string; email?: string }) {
+  return await userRepository.update(id, data)
+}
+
+export async function deleteUser(id: number) {
+  return await userRepository.remove(id)
+}
+```
+
+Agora, atualize o controlador de Usuário. Atualize o arquivo `src/controllers/user.controller.ts` com os seguintes métodos:
+
+```typescript
+export async function updateUser(req: express.Request, res: express.Response) {
+  const { id } = req.params
+  const { name, email } = req.body
+  const user = await userService.updateUser(Number(id), { name, email })
+  res.status(200).json(user)
+}
+
+export async function deleteUser(req: express.Request, res: express.Response) {
+  const { id } = req.params
+  await userService.deleteUser(Number(id))
+  res.status(204).send()
+}
+```
+
+Finalmente, atualize as rotas de Usuário. Atualize o arquivo `src/routes/user.routes.ts` com as seguintes rotas:
+
+```typescript
+router.put("/users/:id", userController.updateUser)
+router.delete("/users/:id", userController.deleteUser)
+```
+
+Caso o User não seja encontrado nas operações de update e delete, o Prisma lançará uma exceção. Podemos fazer uma checagem simples no Serviço para retornar `null` nesses casos. Atualize os métodos `updateUser` e `deleteUser` no arquivo `src/services/user.service.ts`:
+
+```typescript
+export async function updateUser(id: number, data: { name?: string; email?: string }) {
+  const user = await userRepository.findById(id)
+  if (!user) {
+    return null
+  }
+  return await userRepository.update(id, data)
+}
+
+export async function deleteUser(id: number) {
+  const user = await userRepository.findById(id)
+  if (!user) {
+    return null
+  }
+  return await userRepository.remove(id)
+}
+```
+
+Nesse retorno de `null`, podemos ajustar o controlador para retornar o status 404. Atualize os métodos `updateUser` e `deleteUser` no arquivo `src/controllers/user.controller.ts`:
+
+```typescript
+export async function updateUser(req: express.Request, res: express.Response) {
+  const { id } = req.params
+  const { name, email } = req.body
+  const user = await userService.updateUser(Number(id), { name, email })
+  if (!user) {
+    return res.status(404).json({ message: "User not found" })
+  }
+
+  return res.status(200).json(user)
+}
+
+export async function deleteUser(req: express.Request, res: express.Response) {
+  const { id } = req.params
+  const result = await userService.deleteUser(Number(id))
+  if (result === null) {
+    return res.status(404).json({ message: "User not found" })
+  }
+
+  return res.status(204).send()
+}
+```
+
+## Etapa 7 - Middleware de tratamento de DTOs
+
+Para melhorar a validação dos dados que chegam nas requisições, vamos criar um middleware para tratar os DTOs (Data Transfer Objects). Vamos utilizar a biblioteca `class-validator` para realizar a validação dos dados.
+
+```bash
+npm install class-validator class-transformer
+```
+
+Crie uma pasta `dtos` dentro da pasta `src` para armazenar os DTOs:
+
+```bash
+mkdir src/dtos
+```
+
+Crie um arquivo `create-user.dto.ts` dentro da pasta `src/dtos` com o seguinte conteúdo:
+
+```typescript
+import { IsEmail, IsNotEmpty } from "class-validator"
+export class CreateUserDto {
+  @IsNotEmpty()
+  name!: string
+
+  @IsEmail()
+  email!: string
+}
+```
+
+Crie um arquivo `update-user.dto.ts` dentro da pasta `src/dtos` com o seguinte conteúdo:
+
+```typescript
+import { IsEmail, IsOptional } from "class-validator"
+export class UpdateUserDto {
+  @IsOptional()
+  name?: string
+
+  @IsOptional()
+  @IsEmail()
+  email?: string
+}
+```
+
+Para usar decorators com TypeScript, precisamos habilitar a opção `experimentalDecorators` no `tsconfig.json`. Abra o arquivo `tsconfig.json` e ajuste a configuração:
+
+```json
+"experimentalDecorators": true,
+"emitDecoratorMetadata": true,
+```
+
+Crie um middleware `validate.dto.ts` dentro da pasta `src/middlewares` com o seguinte conteúdo:
+
+```typescript
+import type express from "express"
+import { plainToInstance } from "class-transformer"
+import { validate } from "class-validator"
+
+export function validateDto(dtoClass: any) {
+  return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const dtoObject = plainToInstance(dtoClass, req.body)
+    const errors = await validate(dtoObject)
+
+    if (errors.length > 0) {
+      const messages = errors.map((error) => Object.values(error.constraints || {})).flat()
+      return res.status(400).json({ errors: messages })
+    }
+
+    req.body = dtoObject
+    next()
+  }
+}
+```
+
+Agora, vamos utilizar esse middleware nas rotas de Usuário. Atualize o arquivo `src/routes/user.routes.ts` para importar os DTOs e o middleware, e aplique o middleware nas rotas de criação e atualização de usuários:
+
+```typescript
+import { validateDto } from "../middlewares/validate.dto.js"
+import { CreateUserDto } from "../dtos/create-user.dto.js"
+import { UpdateUserDto } from "../dtos/update-user.dto.js"
+
+router.post("/users", validateDto(CreateUserDto), userController.createUser)
+router.put("/users/:id", validateDto(UpdateUserDto), userController.updateUser)
 ```

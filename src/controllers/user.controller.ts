@@ -21,3 +21,24 @@ export async function getUserById(req: express.Request, res: express.Response) {
     res.status(404).json({ message: "User not found" })
   }
 }
+
+export async function updateUser(req: express.Request, res: express.Response) {
+  const { id } = req.params
+  const { name, email } = req.body
+  const user = await userService.updateUser(Number(id), { name, email })
+  if (!user) {
+    return res.status(404).json({ message: "User not found" })
+  }
+
+  return res.status(200).json(user)
+}
+
+export async function deleteUser(req: express.Request, res: express.Response) {
+  const { id } = req.params
+  const result = await userService.deleteUser(Number(id))
+  if (result === null) {
+    return res.status(404).json({ message: "User not found" })
+  }
+
+  return res.status(204).send()
+}
