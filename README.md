@@ -462,3 +462,41 @@ import { UpdateUserDto } from "../dtos/update-user.dto.js"
 router.post("/users", validateDto(CreateUserDto), userController.createUser)
 router.put("/users/:id", validateDto(UpdateUserDto), userController.updateUser)
 ```
+
+## Etapa 8 - Correção do Erro de Build
+
+Ao executar o comando `npm run build`, você pode encontrar o seguinte erro:
+
+```
+error TS6059: File '/Users/.../generated/prisma/client.ts' is not under 'rootDir' '/Users/.../src'. 
+'rootDir' is expected to contain all source files.
+```
+
+Esse erro ocorre porque o TypeScript está configurado com `rootDir: "./src"`, mas o código importa arquivos do diretório `generated/prisma`, que está fora do `rootDir` especificado.
+
+**Solução:** Remova a configuração `rootDir` do `tsconfig.json`, mantendo apenas o `outDir`:
+
+No arquivo `tsconfig.json`, remova a linha:
+```json
+"rootDir": "./src",
+```
+
+Mantendo apenas:
+```json
+"outDir": "./dist",
+```
+
+Após essa alteração, o comando `npm run build` deve executar sem erros. O TypeScript irá compilar corretamente os arquivos, incluindo as importações do Prisma Client gerado.
+
+## Etapa 9 - Build e Deploy no Render.com
+
+Para fazer o deploy da aplicação no Render.com, siga os passos abaixo:
+
+1. Crie uma conta no [Render.com](https://render.com/) se ainda não tiver uma.
+3. No Render.com, clique em "New" e selecione "Web Service".
+4. Conecte sua conta do GitHub e selecione o repositório do projeto.
+5. Configure as seguintes opções:
+   - **Environment**: Node
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `node dist/server.js`
+6. Clique em "Create Web Service" para iniciar o deploy.
