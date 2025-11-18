@@ -149,16 +149,12 @@ mkdir -p src/controllers src/entities src/repositories src/routes src/services
 Vamos começar criando a entidade de Usuário. Crie um arquivo `user.entity.ts` dentro da pasta `src/entities` com o seguinte conteúdo:
 
 ```typescript
-import { PrismaClient } from "../../generated/prisma/client.js"
+import { PrismaClient } from "@prisma/client"
 
 const prisma = new PrismaClient()
 
 export default prisma.user
 ```
-
-> **Nota:** O Prisma gera o cliente em `generated/prisma/client.js` devido à configuração customizada no `schema.prisma`.
-
-> **Nota:** O Prisma gera o cliente em `generated/prisma/client.js` devido à configuração customizada no `schema.prisma`.
 
 Agora vamos criar o repositório de Usuário. Crie um arquivo `user.repository.ts` dentro da pasta `src/repositories` com o seguinte conteúdo:
 
@@ -465,6 +461,8 @@ router.put("/users/:id", validateDto(UpdateUserDto), userController.updateUser)
 
 ## Etapa 8 - Correção do Erro de Build
 
+### Problema: Arquivos fora do rootDir
+
 Ao executar o comando `npm run build`, você pode encontrar o seguinte erro:
 
 ```
@@ -474,29 +472,54 @@ error TS6059: File '/Users/.../generated/prisma/client.ts' is not under 'rootDir
 
 Esse erro ocorre porque o TypeScript está configurado com `rootDir: "./src"`, mas o código importa arquivos do diretório `generated/prisma`, que está fora do `rootDir` especificado.
 
-**Solução:** Remova a configuração `rootDir` do `tsconfig.json`, mantendo apenas o `outDir`:
+**Solução:** Configure o `include` no `tsconfig.json` para especificar quais arquivos devem ser compilados:
 
-No arquivo `tsconfig.json`, remova a linha:
+No arquivo `tsconfig.json`, adicione a seguinte configuração (no nível raiz, fora de `compilerOptions`):
+
 ```json
-"rootDir": "./src",
+{
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    // ... outras configurações
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "generated",
+    "prisma.config.ts",
+    "node_modules",
+    "dist"
+  ]
+}
 ```
 
-Mantendo apenas:
-```json
-"outDir": "./dist",
-```
+Com essa configuração:
+- O TypeScript compila apenas os arquivos dentro de `src/`
+- Os arquivos compilados são gerados em `dist/` mantendo a estrutura de `src/`
+- O arquivo final será `dist/server.js` (não `dist/src/server.js`)
 
-Após essa alteração, o comando `npm run build` deve executar sem erros. O TypeScript irá compilar corretamente os arquivos, incluindo as importações do Prisma Client gerado.
+Após essa alteração, o comando `npm run build` deve executar sem erros.
 
 ## Etapa 9 - Build e Deploy no Render.com
 
 Para fazer o deploy da aplicação no Render.com, siga os passos abaixo:
 
 1. Crie uma conta no [Render.com](https://render.com/) se ainda não tiver uma.
-3. No Render.com, clique em "New" e selecione "Web Service".
-4. Conecte sua conta do GitHub e selecione o repositório do projeto.
-5. Configure as seguintes opções:
+2. No Render.com, clique em "New" e selecione "Web Service".
+3. Conecte sua conta do GitHub e selecione o repositório do projeto.
+4. Configure as seguintes opções:
    - **Environment**: Node
-   - **Build Command**: `npm install && npm run build`
+   - **Build Command**: `npm install && npx prisma generate && npm run build`
    - **Start Command**: `node dist/server.js`
+5. Adicione as variáveis de ambiente necessárias:
+   - `DATABASE_URL`: `file:/opt/render/project/database.db` (para SQLite)
 6. Clique em "Create Web Service" para iniciar o deploy.
+
+### Observações Importantes
+
+**Sobre o Start Command:**
+- Use `node dist/server.js` (sem `./` no início)
+- Com a configuração do `tsconfig.json` usando `rootDir` e `include`, o arquivo compilado fica em `dist/server.js`
+
+**Sobre SQLite em Produção:**
+O Render pode reiniciar o container e você perderá os dados do SQLite. Para produção, considere usar PostgreSQL.
